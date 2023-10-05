@@ -33,7 +33,3 @@ HOW TO USE THE MOD (this is important):
 =================
 
 Enjoy!
-
-Questions or Concerns? Make sure to tag @Demiurge or @Faustas in the speedrunning discord or ask around in the #modding or the #runners channel!
-
-https://discord.gg/neonwhitespeedruns
