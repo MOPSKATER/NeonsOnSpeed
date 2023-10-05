@@ -1,9 +1,9 @@
 ﻿using HarmonyLib;
 using MelonLoader;
+using System.Runtime.CompilerServices;
 using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using static MelonLoader.MelonLogger;
 
 namespace NeonsOnSpeed
 {
@@ -22,9 +22,9 @@ namespace NeonsOnSpeed
         private TextDisplay _display;
         private bool _lastState = false;
         private long _sessionPB = -1;
+        private bool _savePB = false;
 
         private string _levelID = "";
-
 
         public override void OnApplicationLateStart()
         {
@@ -40,15 +40,22 @@ namespace NeonsOnSpeed
             HarmonyLib.Harmony harmony = new("de.MOPSKATER.NeonsOnSpeed");
             GameObject go = new("Neons on Speed");
             _display = go.AddComponent<TextDisplay>();
-            //go.SetActive(false);
             UnityEngine.Object.DontDestroyOnLoad(go);
 
             Singleton<Game>.Instance.OnLevelLoadComplete += () =>
             {
+                string currentLevel = Singleton<Game>.Instance.GetCurrentLevel().levelID;
+                if (currentLevel == "HUB_HEAVEN" || _state == State.Disabled)
+                {
+                    _savePB = false;
+                    return;
+                }
+
+                _savePB = true;
                 if (_state != State.Staging) return;
 
                 if (_levelID == "")
-                    _levelID = Singleton<Game>.Instance.GetCurrentLevel().levelID;
+                    _levelID = currentLevel;
                 _state = State.Running;
                 _display.Run();
             };
@@ -58,7 +65,7 @@ namespace NeonsOnSpeed
         [HarmonyPatch(typeof(Game), "OnLevelWin")]
         private static void PreOnLevelWin()
         {
-            if (_instance._state != State.Running) return;
+            if (!_instance._savePB) return;
 
             long currentScore = Singleton<Game>.Instance.GetCurrentLevelTimerMicroseconds();
             if (_instance._sessionPB == -1)
@@ -73,18 +80,13 @@ namespace NeonsOnSpeed
                 _instance._sessionPB = currentScore;
                 _instance._display.SessionPB = LongToTime(currentScore);
             }
+            _instance._display.SetTimer();
         }
 
         [HarmonyPostfix]
         [HarmonyPatch(typeof(MelonPrefManager.UI.UIManager), "SavePreferences")]
         private static void OnSavePreferences()
         {
-            if (!SceneManager.GetActiveScene().name.Equals("Heaven_Environment") && !SceneManager.GetActiveScene().name.Equals("Menu"))
-            {
-                _instance._enabled.Value = false;
-                return;
-            }
-
             if (_instance._enabled.Value == _instance._lastState) return;
 
             _instance._lastState = _instance._enabled.Value;
@@ -93,7 +95,15 @@ namespace NeonsOnSpeed
             {
                 _instance._state = State.Disabled;
                 _instance._lastState = false;
+                _instance._savePB = false;
                 _instance._display.Reset();
+                return;
+            }
+
+            if (!SceneManager.GetActiveScene().name.Equals("Heaven_Environment") && !SceneManager.GetActiveScene().name.Equals("Menu"))
+            {
+                _instance._enabled.Value = false;
+                _instance._lastState = false;
                 return;
             }
 
@@ -106,6 +116,7 @@ namespace NeonsOnSpeed
                 _instance._enabled.Value = false;
                 _instance._lastState = false;
                 _instance._display.UpdateTimer = false;
+                AudioController.Play("UI_RELATIONSHIP_LEVEL_UP", 2f);
             });
         }
 
@@ -146,18 +157,41 @@ namespace NeonsOnSpeed
             !_instance._enabled.Value && _instance._state == State.Disabled;
 
         [HarmonyPrefix]
-        //[HarmonyPatch(typeof(Game), "PlayLevel", new Type[] { typeof(LevelData), typeof(bool), typeof(bool) })]
         [HarmonyPatch(typeof(Game), "PlayLevel", new Type[] { typeof(string), typeof(bool), typeof(Action) })]
         private static bool LockInLevel(ref string newLevelID)
         {
             if (_instance._enabled.Value && _instance._state == State.Running)
-                return newLevelID == _instance._levelID;
+                return newLevelID == _instance._levelID || newLevelID == "xxx";
             return true;
         }
 
         [HarmonyPrefix]
-        [HarmonyPatch(typeof(Game), "PlayNextArchiveLevel")]
+        [HarmonyPatch(typeof(MainMenu), "OnPressButtonNextLevel")]
+        [HarmonyPatch(typeof(MainMenu), "OnPressButtonJobArchiveFromLocation")]
+        [HarmonyPatch(typeof(MainMenu), "OnPressButtonReturnToHub")]
+        [HarmonyPatch(typeof(MainMenu), "OnPressButtonQuitLevel")]
         private static bool PreventPlayNextArchiveLevel() =>
             !_instance._enabled.Value && _instance._state == State.Disabled;
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MenuScreenLocation), "CreateActionButton")]
+        private static bool PreCreateActionButton(ref HubAction hubAction) =>
+            hubAction.ID != "PORTAL_CONTINUE_MISSION";
+
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(MechController), "Die")]
+        private static void PauseTimerForLoading(ref bool restartImmediately, ref bool playRestartSound)
+        {
+            if (restartImmediately && playRestartSound)
+                _instance._display.UpdateTimer = false;
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(MainMenu), "SetState")]
+        private static void ContinueTimer(ref MainMenu.State newState, ref bool fromRestart, ref bool fromArchive)
+        {
+            if (newState == MainMenu.State.Staging && MainMenu.Instance().GetCurrentState() == MainMenu.State.Staging && fromRestart && !fromArchive)
+                _instance._display.UpdateTimer = true;
+        }
     }
 }

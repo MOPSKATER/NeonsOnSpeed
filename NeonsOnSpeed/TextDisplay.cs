@@ -49,15 +49,13 @@ namespace NeonsOnSpeed
 
             if (!UpdateTimer) return;
 
-            _timer += Time.deltaTime;
+            _timer += Time.unscaledDeltaTime;
             if (_timer >= _timerMax)
             {
                 _timer = _timerMax;
                 _onTimerExpire();
             }
-            _timerText = Utils.FloatToTime(_timer, "#00:00");
-
-            _text.SetText($"{_runID}\n{_timerText}\n{SessionPB}");
+            SetTimer();
         }
 
         public void SetStaging(int timerMax, Callback onTimerExpire)
@@ -85,6 +83,12 @@ namespace NeonsOnSpeed
             _timerText = string.Empty;
             _runID = string.Empty;
             SessionPB = string.Empty;
+        }
+
+        public void SetTimer()
+        {
+            _timerText = Utils.FloatToTime(_timer, "#00:00");
+            _text.SetText($"{_runID}\n{_timerText}\n{SessionPB}");
         }
 
         private static string GenerateID()
